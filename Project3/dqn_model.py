@@ -15,7 +15,7 @@ class DQN(nn.Module):
     This is just a hint. You can build your own structure.
     """
 
-    def __init__(self):
+    def __init__(self, in_channels=4, num_actions=4):
         """
         Parameters:
         -----------
@@ -27,7 +27,7 @@ class DQN(nn.Module):
         In the constructor we instantiate modules and assign them as
         member variables.
         """
-        super(DQN, self).__init__(in_channels=4, num_actions=4)
+        super(DQN, self).__init__()
         ###########################
         # YOUR IMPLEMENTATION HERE #
 

@@ -16,6 +16,7 @@ from dqn_model import DQN
 you can import any package and define any extra function as you need
 """
 from matplotlib import pyplot as plt
+import time
 
 torch.manual_seed(595)
 np.random.seed(595)
@@ -83,7 +84,7 @@ class Agent_DQN(Agent):
         ##
         self.mean_window = 100
         self.print_frequency = 100
-        
+        self.out_dir = "DQN_Module_1/"
         
         
         if args.test_dqn:
@@ -148,7 +149,7 @@ class Agent_DQN(Agent):
         # YOUR IMPLEMENTATION HERE #
         if len(self.memory) >= self.memory_cap:
             self.memory.pop(0)
-        self.memory.append((state, action, reward, next_state, dead, done))
+        self.memory.append((state, action, reward, next_state, done))
         ###########################
         
         
@@ -169,13 +170,14 @@ class Agent_DQN(Agent):
         """
         ###########################
         # YOUR IMPLEMENTATION HERE #
-#         self.steps_done = 0
+        self.steps_done = 0
         self.steps = []
         self.rewards = []
         self.mean_rewards = []
+        self.time = []
         self.best_reward = 0
         self.last_saved_reward = 0
-        
+        self.start_time = time.time()
 #         # continue training from where it stopped
 #         if self.load_model:
 #             self.policy_net.load_state_dict(torch.load('model.pth', map_location=self.device))
@@ -185,7 +187,7 @@ class Agent_DQN(Agent):
         for episode in range(self.n_episode):
             # Initialize the environment and state
             state = self.env.reset()/255.
-            self.last_life = 5
+#             self.last_life = 5
             total_reward = 0
             self.step = 0
             done = False
@@ -193,16 +195,16 @@ class Agent_DQN(Agent):
             while (not done) and self.step < 10000:
                 # move to next state
                 self.step += 1
-#                 self.steps_done += 1
+                self.steps_done += 1
                 action = self.make_action(state)
                 next_state,reward,done,life = self.env.step(action)                
                 # lives matter
-                self.now_life = life['ale.lives']
-                dead = self.now_life < self.last_life
-                self.last_life = self.now_life
+#                 self.now_life = life['ale.lives']
+#                 dead = self.now_life < self.last_life
+#                 self.last_life = self.now_life
                 next_state = next_state/255.
                 # Store the transition in memory
-                self.push(state, action, reward, next_state, dead, done)
+                self.push(state, action, reward, next_state, done)
                 state = next_state
                 total_reward += reward               
             
@@ -210,51 +212,80 @@ class Agent_DQN(Agent):
                     self.rewards.append(total_reward)
                     self.mean_reward = np.mean(self.rewards[-self.mean_window:])
                     self.mean_rewards.append(self.mean_reward)
+                    self.time.append(time.time() - self.start_time)
                     self.steps.append(self.step)
                     # print the process to terminal
-                    if episode % self.print_frequency == 0:
-                        print("="*50)
-                        print('Current episode = ', episode)
+                    progress = "episode: " + str(episode) + ",\t epsilon: " + str(self.epsilon) + ",\t Current mean reward: "+ str(self.mean_reward)
+                    progress +=  ',\t Best mean reward' + str(self.best_reward) + ",\t time" + str(self.time)
+                    if episode % self.print_frequency == 0:        
                         self.print_and_plot()                        
                     # save the best model
-                    if self.mean_reward > self.best_reward:
-                        print('-------<Model updated with best reward = ', self.mean_reward,'>-------')
-                        checkpoint_path = 'DQN_Module/model.pth'
+                    #self.mean_reward > 10
+                    if  self.mean_reward > self.best_reward :
+                        print('~~~~~~~~~~<Model updated with best reward = ', self.mean_reward,'>~~~~~~~~~~')
+                        checkpoint_path = self.out_dir + 'model.pth'
                         torch.save(self.policy_net.state_dict(), checkpoint_path)
-#                         self.last_saved_reward = self.mean_reward
+                        self.last_saved_reward = self.mean_reward
                         self.best_reward = self.mean_reward
-                    
-                        
-#             if total_reward > 0:
-#                 #print
-#                 string = 'Ep:' + str(episode) + ',\t total steps: '+str(self.steps_done)
-#                 string += ',\t current steps: '+str(self.step) + ',\t total_reward: ' +str(total_reward)                
-#                 print(string)
+    
+                if len(self.memory) >= 5000 and self.steps_done % 4 == 0:
+#                     if self.algorithm == 'DQN':
+                    self.optimize_DQN()
+                if self.steps_done % self.f_update == 0:
+                    self.target_net.load_state_dict(self.policy_net.state_dict())
+#                     print('-------<target net updated at step,',self.steps_done,'>-------')       
 
         ###########################
+    def optimize_DQN(self):
+        # sample
+        self.replay_buffer()
+        state, action, reward, next_state, done = zip(*self.mini_batch)
+
+        # transfer 1*84*84*4 to 1*4*84*84, which is 0,3,1,2
+        state = self.Tensor(np.float32(state)).permute(0,3,1,2).to(self.device)
+        action = self.LongTensor(action).to(self.device)
+        reward = self.Tensor(reward).to(self.device)
+        next_state = self.Tensor(np.float32(next_state)).permute(0,3,1,2).to(self.device)
+
+        done = self.Tensor(done).to(self.device)
+
+        # Compute Q(s_t, a)
+        state_action_values = self.policy_net(state).gather(1,action.unsqueeze(1)).squeeze(1)
+        # Compute next Q, including the mask
+        next_state_values = self.target_net(next_state).detach().max(1)[0]
+        # Compute the expected Q value. stop update if done
+        expected_state_action_values = reward + (next_state_values * self.gamma)*(1-done)
+        # Compute Huber loss
+        self.loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.data)
+        # Optimize the model
+        self.optimizer.zero_grad()
+        self.loss.backward()
+        self.optimizer.step()
+        return
     
     
-    
-    def print_and_plot(self):        
-#         print('Current steps = ', self.steps_done)
-        print('Current epsilon = ', self.epsilon)                       
-        print('Current mean reward = ', self.mean_reward)
-        print('Current memory allocated = ', len(self.memory))
-        print('Best mean reward = ', self.best_reward)
+    def print_and_plot(self):    
         fig1 = plt.figure(1)
         plt.clf()
         plt.title('Training...')
         plt.xlabel('Episode')
         plt.ylabel('Steps')
         plt.plot(self.steps)
-        fig1.savefig('DQN_Module/steps.png')
+        fig1.savefig(self.out_dir + 'steps.png')
 
         fig2 = plt.figure(2)
         plt.clf()
         plt.title('Training...')
         plt.xlabel('Episode')
         plt.ylabel('Reward')
-        plt.plot(self.mean_rewards)
-        # Take episode averages and plot them too        
-        fig2.savefig('DQN_Module/rewards.png')
+        plt.plot(self.mean_rewards)        
+        fig2.savefig(self.out_dir + 'rewards.png')
+        
+        fig2 = plt.figure(3)
+        plt.clf()
+        plt.title('Training...')
+        plt.xlabel('Episode')
+        plt.ylabel('Time')
+        plt.plot(self.time)        
+        fig2.savefig(self.out_dir+'time.png')
         

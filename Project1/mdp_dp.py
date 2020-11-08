@@ -31,7 +31,6 @@ the parameters P, nS, nA, gamma are defined as follows:
 
 def policy_evaluation(P, nS, nA, policy, gamma=0.9, tol=1e-8):
     """Evaluate the value function from a given policy.
-
     Parameters:
     ----------
     P, nS, nA, gamma:
@@ -50,11 +49,28 @@ def policy_evaluation(P, nS, nA, policy, gamma=0.9, tol=1e-8):
     
     value_function = np.zeros(nS)
     ############################
-    # YOUR IMPLEMENTATION HERE #
-    
+    # YOUR IMPLEMENTATION HERE #  
+    while True:
+        delta = 0
+        for s in range(nS):
+            Vs = 0
+            for a, action_prob in enumerate(policy[s]):
+                for prob, next_state, reward, done in P[s][a]:
+                    Vs += action_prob * prob * (reward + gamma * value_function[next_state])
+            delta = max(delta, np.abs(value_function[s]-Vs))
+            value_function[s] = Vs
+        if delta < tol:
+            break
+        # print(delta)
     ############################
     return value_function
 
+def getQ(P, nA, V, s, gamma = 0.9):
+    q = np.zeros(nA)
+    for a in range(nA):
+        for prob, next_state, reward, done in P[s][a]:
+            q[a] += prob * (reward + gamma * V[next_state])
+    return q
 
 def policy_improvement(P, nS, nA, value_from_policy, gamma=0.9):
     """Given the value function from policy improve the policy.
@@ -73,10 +89,12 @@ def policy_improvement(P, nS, nA, value_from_policy, gamma=0.9):
         given value function.
     """
 
-    new_policy = np.ones([nS, nA]) / nA
+    new_policy = np.zeros([nS, nA]) / nA
 	############################
-	# YOUR IMPLEMENTATION HERE #
-
+	# YOUR IMPLEMENTATION HERE #    
+    for s in range(nS):
+        q =  getQ(P, nA, value_from_policy, s, gamma)
+        new_policy[s][np.argmax(q)] = 1
 	############################
     return new_policy
 
@@ -102,7 +120,12 @@ def policy_iteration(P, nS, nA, policy, gamma=0.9, tol=1e-8):
     new_policy = policy.copy()
 	############################
 	# YOUR IMPLEMENTATION HERE #
-
+    while True:
+        V = policy_evaluation(P, nS, nA, policy, gamma, tol)
+        policy = policy_improvement(P, nS, nA, V, gamma)
+        if (new_policy == policy).all():
+            break
+        new_policy = policy
 	############################
     return new_policy, V
 
@@ -128,7 +151,15 @@ def value_iteration(P, nS, nA, V, gamma=0.9, tol=1e-8):
     V_new = V.copy()
     ############################
     # YOUR IMPLEMENTATION HERE #
-
+    while True:
+        delta = 0
+        for s in range(nS):
+            v = V_new[s]
+            V_new[s] = max(getQ(P, nA, V_new, s, gamma))
+            delta = max(delta, abs(V_new[s] - v))
+        if delta < tol:
+            break
+    policy_new = policy_improvement(P, nS, nA, V_new, gamma)
     ############################
     return policy_new, V_new
 
@@ -159,7 +190,9 @@ def render_single(env, policy, render = False, n_episodes=100):
                 env.render() # render the game
             ############################
             # YOUR IMPLEMENTATION HERE #
-            
+            action = np.random.choice(range(env.nA), p=policy[ob])
+            ob, reward, done, info = env.step(action)
+            total_rewards += reward
     return total_rewards
 
 

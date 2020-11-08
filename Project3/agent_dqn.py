@@ -84,7 +84,7 @@ class Agent_DQN(Agent):
         ##
         self.mean_window = 100
         self.print_frequency = 100
-        self.out_dir = "DQN_Module_1/"
+        self.out_dir = "DQN_Module_b1/"
         
         
         if args.test_dqn:
@@ -137,7 +137,7 @@ class Agent_DQN(Agent):
         ###########################
         return action
     
-    def push(self,state, action, reward, next_state, dead, done):
+    def push(self,state, action, reward, next_state, done):
         """ You can add additional arguments as you need. 
         Push new data to buffer and remove the old one if the buffer is full.
         
@@ -178,12 +178,13 @@ class Agent_DQN(Agent):
         self.best_reward = 0
         self.last_saved_reward = 0
         self.start_time = time.time()
-#         # continue training from where it stopped
-#         if self.load_model:
-#             self.policy_net.load_state_dict(torch.load('model.pth', map_location=self.device))
-#             self.target_net.load_state_dict(self.policy_net.state_dict())
-#             self.epsilon = self.epsilon_min
-        
+        print('train')
+        # continue training from where it stopped
+        if self.load_model:
+            self.policy_net.load_state_dict(torch.load(self.out_dir+'model.pth', map_location=self.device))
+            self.target_net.load_state_dict(self.policy_net.state_dict())
+            self.epsilon = self.epsilon_min
+            print('Loaded')
         for episode in range(self.n_episode):
             # Initialize the environment and state
             state = self.env.reset()/255.
@@ -214,14 +215,16 @@ class Agent_DQN(Agent):
                     self.mean_rewards.append(self.mean_reward)
                     self.time.append(time.time() - self.start_time)
                     self.steps.append(self.step)
+                    
                     # print the process to terminal
-                    progress = "episode: " + str(episode) + ",\t epsilon: " + str(self.epsilon) + ",\t Current mean reward: "+ str(self.mean_reward)
-                    progress +=  ',\t Best mean reward' + str(self.best_reward) + ",\t time" + str(self.time)
+                    progress = "episode: " + str(episode) + ",\t epsilon: " + str(self.epsilon) + ",\t Current mean reward: "+ "{:.2f}".format(self.mean_reward)
+                    progress +=  ',\t Best mean reward: ' + "{:.2f}".format(self.best_reward) + ",\t time: " + time.strftime('%H:%M:%S', time.gmtime(self.time[-1]))
+                    print(progress)
+                    
                     if episode % self.print_frequency == 0:        
                         self.print_and_plot()                        
                     # save the best model
-                    #self.mean_reward > 10
-                    if  self.mean_reward > self.best_reward :
+                    if  self.mean_reward > self.best_reward and len(self.memory) >= 5000 :
                         print('~~~~~~~~~~<Model updated with best reward = ', self.mean_reward,'>~~~~~~~~~~')
                         checkpoint_path = self.out_dir + 'model.pth'
                         torch.save(self.policy_net.state_dict(), checkpoint_path)

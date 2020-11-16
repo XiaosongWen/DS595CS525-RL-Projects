@@ -31,13 +31,13 @@ def test(agent, env, total_episodes=30):
         agent.init_game_setting()
         done = False
         episode_reward = 0.0
-
-        #playing one game
+        #playing one game        
         while(not done):
             action = agent.make_action(state, test=True)
             state, reward, done, info = env.step(action)
-            episode_reward += reward
-
+            episode_reward += reward            
+#             step+=1
+        print(i,"episode_reward: ",episode_reward)
         rewards.append(episode_reward)
     print('Run %d episodes'%(total_episodes))
     print('Mean:', np.mean(rewards))

@@ -15,14 +15,8 @@ from dqn_model import DQN
 """
 you can import any package and define any extra function as you need
 """
-from itertools import count
 import time
-
-import matplotlib
 from matplotlib import pyplot as plt
-
-
-
 
 torch.manual_seed(595)
 np.random.seed(595)
@@ -40,7 +34,6 @@ class Agent_DQN(Agent):
             parameters for q-learning; decaying epsilon-greedy
             ...
         """
-
         super(Agent_DQN,self).__init__(env)
         ###########################
         # YOUR IMPLEMENTATION HERE #
@@ -53,15 +46,16 @@ class Agent_DQN(Agent):
         self.memory_cap = self.args.memory_cap
         self.n_episode = self.args.n_episode
         self.n_step = self.args.n_step
-        self.f_update = self.args.f_update
-        self.explore_step = self.args.explore_step
-        self.load_model = self.args.load_model
+        self.update_f = self.args.update_f
+        self.explore_step = self.args.explore_step        
         self.action_size = self.args.action_size
         self.algorithm = self.args.algorithm
-        self.save_path = "test_ddqn/"
-        if not self.algorithm =='DQN':
-            print('using algorithm ', self.algorithm)
-                
+        self.save_path = "dqn/"
+        print('using algorithm ', self.algorithm)
+        
+        # whether continue training
+        self.load_model = self.args.load_model        
+        
         # unify tensor tpye according to device names
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
@@ -87,18 +81,17 @@ class Agent_DQN(Agent):
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
-        # buffer
+        # replay buffer
         self.memory = []
-
-
+        
         # optimizer
         self.optimizer = optim.Adam(params=self.policy_net.parameters(), lr=self.lr)
         if self.algorithm == 'DDQN':
             self.optimizer_2 = optim.Adam(params=self.policy_net_2.parameters(), lr=self.lr)
-
+        
         # other
-        self.f_skip = 4 # frame skip. choose 4 according to the paper
-        self.n_avg_reward = 100 # take recent n episodes as best reward candidate
+        self.f_skip = 4 # frame skip
+        self.n_avg_reward = 100
         self.f_print = 100
         self.print_test = False
         
@@ -141,19 +134,18 @@ class Agent_DQN(Agent):
                 the predicted action from trained model
         """
         ###########################
-        # YOUR IMPLEMENTATION HERE #
-        # epsilon decay
+        # YOUR IMPLEMENTATION HERE #         
         if test:
-            self.epsilon = self.epsilon_min*0.5
+            self.epsilon = self.epsilon_min
             observation = observation/255.
         else:
-            self.epsilon = max(self.epsilon-self.epsilon_decay, self.epsilon_min)
+            self.epsilon = max(self.epsilon-self.epsilon_decay, self.epsilon_min)        
         if random.random() > self.epsilon:
             observation = self.Tensor(observation.reshape((1,84,84,4))).transpose(1,3).transpose(2,3)
             state_action_value = self.policy_net(observation).data.cpu().numpy()
             action = np.argmax(state_action_value)
         else:
-            action = random.randint(0, self.action_size-1)
+            action = random.randint(0, self.action_size-1)            
         ###########################
         return action
     
@@ -196,16 +188,16 @@ class Agent_DQN(Agent):
         self.mean_rewards = []
         self.best_reward = 0
         self.last_saved_reward = 0
-        training = 0
+
         start = time.time()
-        logfile = open('simple_dqn.log', 'w+')
+        logfile = open('dqn.log', 'w+')
         # continue training
         if self.load_model:
-            self.policy_net.load_state_dict(torch.load(self.save_path+'model.pth', map_location=self.device))
+            self.policy_net.load_state_dict(torch.load(self.save_path+'model.pth', map_location=self.device))           
             self.target_net.load_state_dict(self.policy_net.state_dict())
             self.epsilon = self.epsilon_min
+            
         for episode in range(self.n_episode):
-            # Initialize the environment and state
             state, done, total_reward = self.init_game_setting()            
             while (not done) and self.step < 10000:
                 # move to next state
@@ -214,9 +206,9 @@ class Agent_DQN(Agent):
                 action = self.make_action(state)
                 next_state,reward,done,life = self.env.step(action)
                 # lives matter
-                self.now_life = life['ale.lives']
-                dead = (self.now_life < self.last_life)
-                self.last_life = self.now_life
+                now_life = life['ale.lives']
+                dead = (now_life < self.last_life)
+                self.last_life = now_life
                 next_state = next_state/255.
                 # Store the transition in memory
                 self.push(state, action, reward, next_state, dead, done)
@@ -228,12 +220,8 @@ class Agent_DQN(Agent):
                         self.optimize_DQN()
                     elif self.algorithm == 'DDQN':
                         self.optimize_DDQN()                    
-                    training += 1
-                # Update the target network
-                if self.steps_done % self.f_update == 0:
-                    self.target_net.load_state_dict(self.policy_net.state_dict())
-                    print('<<<target net updated at step,',self.steps_done,'>>>')
-                # Observe new state, or log the episode
+                if self.steps_done % self.update_f == 0:
+                    self.target_net.load_state_dict(self.policy_net.state_dict())                
 
             self.rewards.append(total_reward)
             self.mean_reward = np.mean(self.rewards[-self.n_avg_reward:])
@@ -241,16 +229,14 @@ class Agent_DQN(Agent):
             self.steps.append(self.step)
             # print progress in terminal
             progress = "Episode: " + str(episode) + ",\tCurrent mean reward: "+ "{:.2f}".format(self.mean_reward) + ',\tBest mean reward: ' + "{:.2f}".format(self.best_reward)
-            progress += ",\tCurerent Reward: " +str(total_reward)+ ",\t training: " +str(training) +",\tTime: " + time.strftime('%H:%M:%S', time.gmtime(time.time() - start))
-            
+            progress += ",\tCurerent Reward: " + str(total_reward)  +",\tTime: " + time.strftime('%H:%M:%S', time.gmtime(time.time() - start))            
             print(progress)
-            print(episode, self.mean_reward, self.best_reward, total_reward,training, time.time() - start, file=logfile)
+            print(episode, self.mean_reward, self.best_reward, total_reward, time.time() - start, file=logfile)
             logfile.flush()
             if (episode+1) % self.f_print == 0:                
                 self.plots()
             # save the best model
-            if self.mean_reward > self.best_reward and self.steps_done > self.n_step:
-                print('~~~~~~~~~~<Model updated with best reward = ', self.mean_reward,'>~~~~~~~~~~')
+            if self.mean_reward > self.best_reward and self.steps_done > self.n_step:                
                 checkpoint_path = self.save_path + 'model.pth'
                 torch.save(self.policy_net.state_dict(), checkpoint_path)
                 self.last_saved_reward = self.mean_reward
@@ -262,7 +248,6 @@ class Agent_DQN(Agent):
         self.replay_buffer()
         state, action, reward, next_state, dead, done = zip(*self.mini_batch)
 
-        # transfer 1*84*84*4 to 1*4*84*84, which is 0,3,1,2
         state = self.Tensor(np.float32(state)).permute(0,3,1,2).to(self.device)
         action = self.LongTensor(action).to(self.device)
         reward = self.Tensor(reward).to(self.device)
@@ -281,8 +266,6 @@ class Agent_DQN(Agent):
         # Optimize the model
         self.optimizer.zero_grad()
         self.loss.backward()
-        # for param in self.policy_net.parameters():
-        #     param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
         return
 
@@ -314,13 +297,9 @@ class Agent_DQN(Agent):
         # Optimize the model
         self.optimizer.zero_grad()
         self.loss.backward()
-        # for param in self.policy_net.parameters():
-        #     param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
         self.optimizer_2.zero_grad()
-        self.loss_2.backward()
-        # for param in self.policy_net.parameters():
-        #     param.grad.data.clamp_(-1, 1)
+        self.loss_2.backward()        
         self.optimizer_2.step()
         return
 
@@ -339,11 +318,10 @@ class Agent_DQN(Agent):
         plt.xlabel('Episode')
         plt.ylabel('Reward')
         plt.plot(self.rewards)
-        # Take episode averages and plot them too
+        
         if len(self.rewards) >= self.n_avg_reward:
             plt.plot(self.mean_rewards)
         fig2.savefig(self.save_path+'rewards.png')
-        # disabled dynamic display to save resource
         
         rewards = np.array(self.rewards)
         np.save(self.save_path+'rewards.npy', rewards)
